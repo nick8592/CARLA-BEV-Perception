@@ -4,6 +4,9 @@ import glob
 import numpy as np
 import carla
 import queue
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')  # Use TkAgg backend for interactive display
 
 # Automatically find and add CARLA Python library path
 try:
@@ -15,7 +18,7 @@ except IndexError:
     pass
 
 class BEVLaneMapper:
-    def __init__(self, debug_mode=True):
+    def __init__(self, debug_mode=True, enable_visualization=True):
         # 1. Initialize Client
         self.client = carla.Client('localhost', 2000)
         self.client.set_timeout(10.0)
@@ -48,6 +51,16 @@ class BEVLaneMapper:
         self.debug_mode = debug_mode
         self.frame_count = 0
         self.total_points_written = 0
+        
+        # 7. Visualization setup
+        self.enable_visualization = enable_visualization
+        self.all_points_x = []
+        self.all_points_y = []
+        if self.enable_visualization:
+            plt.ion()  # Enable interactive mode
+            self.fig, self.ax = plt.subplots(figsize=(12, 8))
+            self.scatter = None
+            self.vehicle_marker = None
 
     def spawn_assets(self):
         # Spawn vehicle
@@ -90,6 +103,61 @@ class BEVLaneMapper:
                 return world_loc
             
             return None
+
+    def update_visualization(self, v_trans):
+        """Update the live BEV visualization plot"""
+        self.ax.clear()
+        
+        # Plot lane points
+        self.ax.scatter(self.all_points_x, self.all_points_y, 
+                       s=1, c='blue', alpha=0.5, label='Lane Points')
+        
+        # Plot vehicle position
+        self.ax.scatter(v_trans.location.x, v_trans.location.y, 
+                       s=200, c='red', marker='^', 
+                       label='Vehicle', edgecolors='black', linewidths=2)
+        
+        # Add vehicle orientation arrow
+        yaw = np.radians(v_trans.rotation.yaw)
+        arrow_length = 5.0
+        dx = arrow_length * np.cos(yaw)
+        dy = arrow_length * np.sin(yaw)
+        self.ax.arrow(v_trans.location.x, v_trans.location.y, 
+                     dx, dy, head_width=2, head_length=2, 
+                     fc='red', ec='red', alpha=0.7)
+        
+        self.ax.set_xlabel('World X (meters)', fontsize=12)
+        self.ax.set_ylabel('World Y (meters)', fontsize=12)
+        self.ax.set_title(f"Bird's-Eye View Lane Mapping (Frame {self.frame_count}, Points: {len(self.all_points_x)})", 
+                         fontsize=14, fontweight='bold')
+        self.ax.axis('equal')
+        self.ax.grid(True, linestyle='--', alpha=0.3)
+        self.ax.legend(loc='upper right')
+        
+        plt.pause(0.001)  # Brief pause to update display
+
+    def save_final_plot(self):
+        """Save final BEV visualization to file"""
+        if len(self.all_points_x) == 0:
+            print("No points to visualize")
+            return
+        
+        fig, ax = plt.subplots(figsize=(14, 10))
+        ax.scatter(self.all_points_x, self.all_points_y, 
+                  s=2, c='blue', alpha=0.6, label=f'Lane Points (n={len(self.all_points_x)})')
+        
+        ax.set_xlabel('World X (meters)', fontsize=14)
+        ax.set_ylabel('World Y (meters)', fontsize=14)
+        ax.set_title("Bird's-Eye View: Complete Lane Mapping Result", 
+                    fontsize=16, fontweight='bold')
+        ax.axis('equal')
+        ax.grid(True, linestyle='--', alpha=0.4)
+        ax.legend(loc='upper right', fontsize=12)
+        
+        output_file = 'bev_lane_mapping_result.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        print(f"\n>>> Saved final visualization to: {output_file}")
+        plt.close(fig)
 
     def run(self):
         print(">>> System startup. Running diagnostics...")
@@ -146,6 +214,11 @@ class BEVLaneMapper:
                             line = f"{image.timestamp:.4f},lane,{res.x:.3f},{res.y:.3f},{res.z:.3f}\n"
                             self.log_file.write(line)
                             points_written += 1
+                            
+                            # Store points for visualization
+                            if self.enable_visualization:
+                                self.all_points_x.append(res.x)
+                                self.all_points_y.append(res.y)
                         else:
                             points_rejected += 1
                     
@@ -160,6 +233,10 @@ class BEVLaneMapper:
                 else:
                     if self.debug_mode:
                         print(" -> WARNING: No lane markings detected")
+                
+                # Update visualization every 10 frames
+                if self.enable_visualization and self.frame_count % 10 == 0 and len(self.all_points_x) > 0:
+                    self.update_visualization(v_trans)
 
         except KeyboardInterrupt:
             print("\n>>> User manually stopped.")
@@ -171,6 +248,12 @@ class BEVLaneMapper:
         print(f">>> Total frames processed: {self.frame_count}")
         print(f">>> Total spatial coordinate points written: {self.total_points_written}")
         
+        # Save final visualization
+        if self.enable_visualization:
+            self.save_final_plot()
+            if plt.fignum_exists(self.fig.number):
+                plt.close(self.fig)
+        
         self.world.apply_settings(self.original_settings)
         if hasattr(self, 'log_file'):
             self.log_file.close()
@@ -181,6 +264,6 @@ class BEVLaneMapper:
         print(">>> Completed.")
 
 if __name__ == "__main__":
-    mapper = BEVLaneMapper(debug_mode=True)
+    mapper = BEVLaneMapper(debug_mode=True, enable_visualization=True)
     mapper.spawn_assets()
     mapper.run()
