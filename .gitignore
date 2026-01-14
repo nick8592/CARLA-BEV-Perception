@@ -1,0 +1,65 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CARLA simulator outputs
+spatial_records.csv
+bev_reconstruction.png
+*.png
+*.jpg
+*.jpeg
+frame_*.jpg
+frame_*.png
+visualization_frames/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Environment variables
+.env
+.env.local
+
+# OS-specific
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Project-specific logs
+*.log
+debug_*.txt
