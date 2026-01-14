@@ -180,31 +180,45 @@ class BEVLaneMapper:
                                       fontsize=11, fontweight='bold')
             self.ax_overhead.axis('off')
         
-        # RIGHT: BEV plot
+        # RIGHT: BEV plot - vehicle-centric view (vehicle fixed at center)
         if len(self.all_points_x) > 0:
-            # Plot lane points
-            self.ax_bev.scatter(self.all_points_x, self.all_points_y, 
+            # Transform all points to vehicle-relative coordinates
+            all_points_x_arr = np.array(self.all_points_x)
+            all_points_y_arr = np.array(self.all_points_y)
+            
+            # Translate to vehicle position
+            rel_x = all_points_x_arr - v_trans.location.x
+            rel_y = all_points_y_arr - v_trans.location.y
+            
+            # Rotate to vehicle frame (so vehicle always points up)
+            yaw = np.radians(v_trans.rotation.yaw)
+            cos_yaw = np.cos(-yaw)
+            sin_yaw = np.sin(-yaw)
+            rotated_x = rel_x * cos_yaw - rel_y * sin_yaw
+            rotated_y = rel_x * sin_yaw + rel_y * cos_yaw
+            
+            # Plot lane points in vehicle frame
+            self.ax_bev.scatter(rotated_x, rotated_y, 
                                s=1, c='blue', alpha=0.5, label='Lane Points')
         
-        # Plot vehicle position
-        self.ax_bev.scatter(v_trans.location.x, v_trans.location.y, 
+        # Plot vehicle at center (always at origin in this view)
+        self.ax_bev.scatter(0, 0, 
                            s=200, c='red', marker='^', 
-                           label='Vehicle', edgecolors='black', linewidths=2)
+                           label='Vehicle (center)', edgecolors='black', linewidths=2)
         
-        # Add vehicle orientation arrow
-        yaw = np.radians(v_trans.rotation.yaw)
+        # Add vehicle orientation arrow (always pointing up)
         arrow_length = 5.0
-        dx = arrow_length * np.cos(yaw)
-        dy = arrow_length * np.sin(yaw)
-        self.ax_bev.arrow(v_trans.location.x, v_trans.location.y, 
-                         dx, dy, head_width=2, head_length=2, 
+        self.ax_bev.arrow(0, 0, 0, arrow_length, 
+                         head_width=2, head_length=2, 
                          fc='red', ec='red', alpha=0.7)
         
-        self.ax_bev.set_xlabel('World X (meters)', fontsize=11)
-        self.ax_bev.set_ylabel('World Y (meters)', fontsize=11)
-        self.ax_bev.set_title(f"BEV Reconstruction\nTotal Points: {len(self.all_points_x)}", 
+        self.ax_bev.set_xlabel('Relative X (meters)', fontsize=11)
+        self.ax_bev.set_ylabel('Relative Y (meters)', fontsize=11)
+        self.ax_bev.set_title(f"BEV Reconstruction (Vehicle Frame)\nTotal Points: {len(self.all_points_x)}", 
                              fontsize=11, fontweight='bold')
         self.ax_bev.axis('equal')
+        self.ax_bev.set_xlim(-50, 50)  # Set reasonable viewing window
+        self.ax_bev.set_ylim(-50, 50)
         self.ax_bev.grid(True, linestyle='--', alpha=0.3)
         self.ax_bev.legend(loc='upper right', fontsize=9)
         
