@@ -46,6 +46,7 @@ class BEVLaneMapper:
         
         # 5. Image queue
         self.image_queue = queue.Queue()
+        self.overhead_queue = queue.Queue()
         
         # 6. Debug mode
         self.debug_mode = debug_mode
@@ -58,11 +59,12 @@ class BEVLaneMapper:
         self.all_points_y = []
         if self.enable_visualization:
             plt.ion()  # Enable interactive mode
-            self.fig, (self.ax_cam, self.ax_bev) = plt.subplots(1, 2, figsize=(20, 8))
+            self.fig, (self.ax_cam, self.ax_overhead, self.ax_bev) = plt.subplots(1, 3, figsize=(24, 8))
             self.scatter = None
             self.vehicle_marker = None
             self.current_image = None
             self.current_lane_mask = None
+            self.current_overhead = None
 
     def spawn_assets(self):
         # Spawn vehicle
@@ -85,6 +87,28 @@ class BEVLaneMapper:
         self.sensor = self.world.spawn_actor(sem_bp, cam_transform, attach_to=self.vehicle)
         self.sensor.listen(self.image_queue.put)
         self.actors.append(self.sensor)
+        
+        # Spawn RGB BEV camera attached to vehicle
+        if self.enable_visualization:
+            bev_rgb_bp = self.blueprint_library.find('sensor.camera.rgb')
+            bev_rgb_bp.set_attribute('image_size_x', '800')
+            bev_rgb_bp.set_attribute('image_size_y', '800')
+            bev_rgb_bp.set_attribute('fov', '110')  # Wide FOV for better coverage
+            
+            # Attach BEV RGB camera to vehicle - positioned high and looking down
+            bev_height = 25.0  # Height above vehicle
+            bev_transform = carla.Transform(
+                carla.Location(x=0.0, y=0.0, z=bev_height),  # Directly above vehicle
+                carla.Rotation(pitch=-90, yaw=0, roll=0)  # Looking straight down
+            )
+            self.overhead_camera = self.world.spawn_actor(bev_rgb_bp, bev_transform, attach_to=self.vehicle)
+            self.overhead_camera.listen(self.overhead_queue.put)
+            self.actors.append(self.overhead_camera)
+            
+            # Store parameters for visualization
+            self.overhead_fov = 110
+            self.overhead_height = bev_height
+            print(f">>> RGB BEV camera attached to vehicle at height: {bev_height}m")
 
     def pixel_to_world_coords(self, u, v, v_trans):
             pitch_rad = np.radians(self.cam_pitch)
@@ -107,9 +131,10 @@ class BEVLaneMapper:
             return None
 
     def update_visualization(self, v_trans):
-        """Update the live dual-view visualization: camera + BEV plot"""
-        # Clear both subplots
+        """Update the live triple-view visualization: camera + overhead map + BEV plot"""
+        # Clear all subplots
         self.ax_cam.clear()
+        self.ax_overhead.clear()
         self.ax_bev.clear()
         
         # LEFT: Camera view with marked road lines
@@ -123,9 +148,37 @@ class BEVLaneMapper:
             blended = (alpha * overlay + (1 - alpha) * self.current_image).astype(np.uint8)
             
             self.ax_cam.imshow(blended)
-            self.ax_cam.set_title(f'Camera View (Frame {self.frame_count})\nGreen: Detected Road Lines', 
-                                 fontsize=12, fontweight='bold')
+            self.ax_cam.set_title(f'Front Camera (Frame {self.frame_count})\nGreen: Detected Road Lines', 
+                                 fontsize=11, fontweight='bold')
             self.ax_cam.axis('off')
+        
+        # CENTER: RGB BEV view from vehicle
+        if self.current_overhead is not None:
+            self.ax_overhead.imshow(self.current_overhead)
+            
+            # Draw vehicle marker at center (since camera is attached to vehicle)
+            # Vehicle is always at the center of this view
+            center_x, center_y = 400, 400
+            self.ax_overhead.plot(center_x, center_y, 'r^', markersize=15, 
+                                 markeredgecolor='white', markeredgewidth=2, 
+                                 label='Vehicle (center)')
+            
+            # Draw orientation indicator (always pointing up since view rotates with vehicle)
+            arrow_length = 30  # pixels
+            self.ax_overhead.arrow(center_x, center_y, 0, -arrow_length, 
+                                  head_width=15, head_length=15,
+                                  fc='red', ec='white', linewidth=2)
+            
+            # Add scale reference
+            fov_rad = np.radians(self.overhead_fov)
+            ground_width = 2 * self.overhead_height * np.tan(fov_rad / 2)
+            scale_text = f'Coverage: ~{ground_width:.1f}m x {ground_width:.1f}m'
+            self.ax_overhead.text(10, 780, scale_text, color='white', fontsize=10,
+                                 bbox=dict(boxstyle='round', facecolor='black', alpha=0.7))
+            
+            self.ax_overhead.set_title('RGB Bird\'s-Eye View\n(Moving with Vehicle)', 
+                                      fontsize=11, fontweight='bold')
+            self.ax_overhead.axis('off')
         
         # RIGHT: BEV plot
         if len(self.all_points_x) > 0:
@@ -147,13 +200,13 @@ class BEVLaneMapper:
                          dx, dy, head_width=2, head_length=2, 
                          fc='red', ec='red', alpha=0.7)
         
-        self.ax_bev.set_xlabel('World X (meters)', fontsize=12)
-        self.ax_bev.set_ylabel('World Y (meters)', fontsize=12)
-        self.ax_bev.set_title(f"Bird's-Eye View\nTotal Points: {len(self.all_points_x)}", 
-                             fontsize=12, fontweight='bold')
+        self.ax_bev.set_xlabel('World X (meters)', fontsize=11)
+        self.ax_bev.set_ylabel('World Y (meters)', fontsize=11)
+        self.ax_bev.set_title(f"BEV Reconstruction\nTotal Points: {len(self.all_points_x)}", 
+                             fontsize=11, fontweight='bold')
         self.ax_bev.axis('equal')
         self.ax_bev.grid(True, linestyle='--', alpha=0.3)
-        self.ax_bev.legend(loc='upper right', fontsize=10)
+        self.ax_bev.legend(loc='upper right', fontsize=9)
         
         plt.tight_layout()
         plt.pause(0.001)  # Brief pause to update display
@@ -194,6 +247,17 @@ class BEVLaneMapper:
                 # Use timeout to prevent infinite waiting
                 try:
                     image = self.image_queue.get(timeout=2.0)
+                    
+                    # Get overhead camera image
+                    if self.enable_visualization:
+                        try:
+                            overhead_image = self.overhead_queue.get(timeout=0.5)
+                            overhead_array = np.frombuffer(overhead_image.raw_data, dtype=np.dtype("uint8"))
+                            overhead_array = np.reshape(overhead_array, (overhead_image.height, overhead_image.width, 4))
+                            self.current_overhead = overhead_array[:, :, :3]  # RGB only
+                        except queue.Empty:
+                            pass  # Keep previous overhead image
+                            
                 except queue.Empty:
                     print(">>> Timeout waiting for image. Check if CARLA is still running")
                     continue
