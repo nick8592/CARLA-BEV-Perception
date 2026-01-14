@@ -58,9 +58,11 @@ class BEVLaneMapper:
         self.all_points_y = []
         if self.enable_visualization:
             plt.ion()  # Enable interactive mode
-            self.fig, self.ax = plt.subplots(figsize=(12, 8))
+            self.fig, (self.ax_cam, self.ax_bev) = plt.subplots(1, 2, figsize=(20, 8))
             self.scatter = None
             self.vehicle_marker = None
+            self.current_image = None
+            self.current_lane_mask = None
 
     def spawn_assets(self):
         # Spawn vehicle
@@ -105,35 +107,55 @@ class BEVLaneMapper:
             return None
 
     def update_visualization(self, v_trans):
-        """Update the live BEV visualization plot"""
-        self.ax.clear()
+        """Update the live dual-view visualization: camera + BEV plot"""
+        # Clear both subplots
+        self.ax_cam.clear()
+        self.ax_bev.clear()
         
-        # Plot lane points
-        self.ax.scatter(self.all_points_x, self.all_points_y, 
-                       s=1, c='blue', alpha=0.5, label='Lane Points')
+        # LEFT: Camera view with marked road lines
+        if self.current_image is not None:
+            # Create overlay image
+            overlay = self.current_image.copy()
+            # Highlight detected lane pixels in bright green
+            overlay[self.current_lane_mask] = [0, 255, 0]
+            # Blend original and overlay
+            alpha = 0.6
+            blended = (alpha * overlay + (1 - alpha) * self.current_image).astype(np.uint8)
+            
+            self.ax_cam.imshow(blended)
+            self.ax_cam.set_title(f'Camera View (Frame {self.frame_count})\nGreen: Detected Road Lines', 
+                                 fontsize=12, fontweight='bold')
+            self.ax_cam.axis('off')
+        
+        # RIGHT: BEV plot
+        if len(self.all_points_x) > 0:
+            # Plot lane points
+            self.ax_bev.scatter(self.all_points_x, self.all_points_y, 
+                               s=1, c='blue', alpha=0.5, label='Lane Points')
         
         # Plot vehicle position
-        self.ax.scatter(v_trans.location.x, v_trans.location.y, 
-                       s=200, c='red', marker='^', 
-                       label='Vehicle', edgecolors='black', linewidths=2)
+        self.ax_bev.scatter(v_trans.location.x, v_trans.location.y, 
+                           s=200, c='red', marker='^', 
+                           label='Vehicle', edgecolors='black', linewidths=2)
         
         # Add vehicle orientation arrow
         yaw = np.radians(v_trans.rotation.yaw)
         arrow_length = 5.0
         dx = arrow_length * np.cos(yaw)
         dy = arrow_length * np.sin(yaw)
-        self.ax.arrow(v_trans.location.x, v_trans.location.y, 
-                     dx, dy, head_width=2, head_length=2, 
-                     fc='red', ec='red', alpha=0.7)
+        self.ax_bev.arrow(v_trans.location.x, v_trans.location.y, 
+                         dx, dy, head_width=2, head_length=2, 
+                         fc='red', ec='red', alpha=0.7)
         
-        self.ax.set_xlabel('World X (meters)', fontsize=12)
-        self.ax.set_ylabel('World Y (meters)', fontsize=12)
-        self.ax.set_title(f"Bird's-Eye View Lane Mapping (Frame {self.frame_count}, Points: {len(self.all_points_x)})", 
-                         fontsize=14, fontweight='bold')
-        self.ax.axis('equal')
-        self.ax.grid(True, linestyle='--', alpha=0.3)
-        self.ax.legend(loc='upper right')
+        self.ax_bev.set_xlabel('World X (meters)', fontsize=12)
+        self.ax_bev.set_ylabel('World Y (meters)', fontsize=12)
+        self.ax_bev.set_title(f"Bird's-Eye View\nTotal Points: {len(self.all_points_x)}", 
+                             fontsize=12, fontweight='bold')
+        self.ax_bev.axis('equal')
+        self.ax_bev.grid(True, linestyle='--', alpha=0.3)
+        self.ax_bev.legend(loc='upper right', fontsize=10)
         
+        plt.tight_layout()
         plt.pause(0.001)  # Brief pause to update display
 
     def save_final_plot(self):
@@ -192,6 +214,11 @@ class BEVLaneMapper:
                 # Check lane marking label for CARLA 0.9.16
                 # Tag 24: RoadLines (confirmed for 0.9.16)
                 lane_mask = np.isin(semantic_data, [24])
+                
+                # Store for visualization
+                if self.enable_visualization:
+                    self.current_image = array[:, :, :3]  # RGB channels
+                    self.current_lane_mask = lane_mask
                 
                 v_idx, u_idx = np.where(lane_mask)
                 
