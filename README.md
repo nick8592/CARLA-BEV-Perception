@@ -17,6 +17,9 @@ This project leverages CARLA's semantic segmentation camera sensor to detect lan
 - **Debug Mode**: Comprehensive logging and diagnostics for troubleshooting
 - **Synchronous Simulation**: Enforces synchronized frame stepping for reliable data collection
 
+![Triple-View Visualization](images/comparison.jpeg)
+*Real-time triple-view visualization: Front camera (left), RGB BEV view (center), and vehicle-centric reconstruction (right)*
+
 ## Project Structure
 
 ```
@@ -137,8 +140,11 @@ CSV file with columns:
 - `world_y`: Y coordinate in world frame (meters)
 - `world_z`: Z coordinate in world frame (meters)
 
-### bev_lane_mapping_result.png
+### bev_lane_mapping_result.jpeg
 Bird's-eye view scatter plot showing all detected lane points projected onto the XY plane (generated at end of session).
+
+![BEV Lane Mapping Result](images/bev_lane_mapping_result.jpeg)
+*Final BEV reconstruction showing accumulated lane detections*
 
 ## Visualization
 
