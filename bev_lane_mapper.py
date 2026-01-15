@@ -163,12 +163,6 @@ class BEVLaneMapper:
                                  markeredgecolor='white', markeredgewidth=2, 
                                  label='Vehicle (center)')
             
-            # Draw orientation indicator (always pointing up since view rotates with vehicle)
-            arrow_length = 30  # pixels
-            self.ax_overhead.arrow(center_x, center_y, 0, -arrow_length, 
-                                  head_width=15, head_length=15,
-                                  fc='red', ec='white', linewidth=2)
-            
             # Add scale reference
             fov_rad = np.radians(self.overhead_fov)
             ground_width = 2 * self.overhead_height * np.tan(fov_rad / 2)
@@ -190,27 +184,29 @@ class BEVLaneMapper:
             rel_x = all_points_x_arr - v_trans.location.x
             rel_y = all_points_y_arr - v_trans.location.y
             
-            # Rotate to vehicle frame (so vehicle always points up)
+            # Rotate to vehicle frame: align with vehicle heading
+            # In CARLA: X=forward, Y=right, so after rotation:
+            # vehicle_x = forward direction, vehicle_y = right direction
             yaw = np.radians(v_trans.rotation.yaw)
             cos_yaw = np.cos(-yaw)
             sin_yaw = np.sin(-yaw)
-            rotated_x = rel_x * cos_yaw - rel_y * sin_yaw
-            rotated_y = rel_x * sin_yaw + rel_y * cos_yaw
+            vehicle_x = rel_x * cos_yaw - rel_y * sin_yaw  # Forward
+            vehicle_y = rel_x * sin_yaw + rel_y * cos_yaw  # Right
+            
+            # Map to BEV plot to match RGB camera view (looking down):
+            # - Right should be plot X-axis (positive right)
+            # - Forward should be plot Y-axis (positive up/forward)
+            plot_x = vehicle_y   # Right direction
+            plot_y = vehicle_x   # Forward direction
             
             # Plot lane points in vehicle frame
-            self.ax_bev.scatter(rotated_x, rotated_y, 
+            self.ax_bev.scatter(plot_x, plot_y, 
                                s=1, c='blue', alpha=0.5, label='Lane Points')
         
         # Plot vehicle at center (always at origin in this view)
         self.ax_bev.scatter(0, 0, 
                            s=200, c='red', marker='^', 
                            label='Vehicle (center)', edgecolors='black', linewidths=2)
-        
-        # Add vehicle orientation arrow (always pointing up)
-        arrow_length = 5.0
-        self.ax_bev.arrow(0, 0, 0, arrow_length, 
-                         head_width=2, head_length=2, 
-                         fc='red', ec='red', alpha=0.7)
         
         self.ax_bev.set_xlabel('Relative X (meters)', fontsize=11)
         self.ax_bev.set_ylabel('Relative Y (meters)', fontsize=11)

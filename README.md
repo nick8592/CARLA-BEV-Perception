@@ -167,6 +167,9 @@ The system provides real-time triple-view visualization during execution:
 - Blue dots: detected lane points
 - Red triangle: vehicle position (always at origin)
 - Viewing window: ±50 meters
+- **Coordinate alignment**: Plot axes aligned with RGB BEV view
+  - X-axis (horizontal): Right direction (positive right, negative left)
+  - Y-axis (vertical): Forward direction (positive forward, negative behind)
 - Shows transformation of all historical detections relative to current vehicle pose
 
 ## Debug Mode
@@ -219,6 +222,10 @@ Debug output includes:
 
 ## Recent Updates
 
+- **v0.2.1** (Jan 2026): Fixed coordinate alignment in BEV reconstruction
+  - Corrected coordinate transformation to match RGB BEV view perspective
+  - Lane points now properly aligned with visual RGB BEV display
+  - Plot axes: X=right, Y=forward (matching top-down camera view)
 - **v0.2** (Jan 2026): Added RGB BEV camera with vehicle-centric reconstruction
   - Replaced fixed overhead camera with vehicle-attached RGB BEV
   - Updated BEV reconstruction to use vehicle-relative frame
